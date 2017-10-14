@@ -1,0 +1,239 @@
+#!/usr/bin/python
+#
+# Copyright 2010 Per Olofsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""See docstring for AppleConnectDownloader class"""
+
+import os.path
+import urllib2
+import xattr
+import zlib
+
+from autopkglib import Processor, ProcessorError
+try:
+    from autopkglib import BUNDLE_ID
+except ImportError:
+    BUNDLE_ID = "com.github.autopkg"
+
+
+__all__ = ["AppleConnectDownloader"]
+
+# XATTR names for Etag and Last-Modified headers
+XATTR_ETAG = "%s.etag" % BUNDLE_ID
+XATTR_LAST_MODIFIED = "%s.last-modified" % BUNDLE_ID
+
+# Download URLs in chunks of 256 kB.
+CHUNK_SIZE = 256 * 1024
+
+def getxattr(pathname, attr):
+    """Get a named xattr from a file. Return None if not present"""
+    if attr in xattr.listxattr(pathname):
+        return xattr.getxattr(pathname, attr)
+    else:
+        return None
+
+
+class AppleConnectDownloader(Processor):
+    """Downloads the current AppleConnect Installer to the specified download_dir."""
+    description = __doc__
+    input_variables = {
+        "download_dir": {
+            "required": False,
+            "description":
+                ("The directory where the file will be downloaded to. Defaults "
+                 "to RECIPE_CACHE_DIR/downloads."),
+        },
+        "filename": {
+            "required": False,
+            "description": "Filename to override the URL's tail.",
+        },
+    }
+    output_variables = {
+        "pathname": {
+            "description": "Path to the downloaded file.",
+        },
+        "last_modified": {
+            "description": "last-modified header for the downloaded item.",
+        },
+        "etag": {
+            "description": "etag header for the downloaded item.",
+        },
+        "download_changed": {
+            "description":
+                ("Boolean indicating if the download has changed since the "
+                 "last time it was downloaded."),
+        },
+        "appleconnect_downloader_summary_result": {
+            "description": "Description of interesting results."
+        },
+    }
+
+    def main(self):
+        # clear any pre-exising summary result
+        if 'appleconnect_downloader_summary_result' in self.env:
+            del self.env['appleconnect_downloader_summary_result']
+
+        self.env["last_modified"] = ""
+        self.env["etag"] = ""
+        existing_file_length = None
+
+        if "PKG" in self.env:
+            self.env["pathname"] = os.path.expanduser(self.env["PKG"])
+            self.env["download_changed"] = True
+            self.output("Given %s, no download needed." % self.env["pathname"])
+            return
+
+        if not "filename" in self.env:
+            # Generate filename.
+            filename = self.env["url"].rpartition("/")[2]
+        else:
+            filename = self.env["filename"]
+        download_dir = (self.env.get("download_dir") or
+                        os.path.join(self.env["RECIPE_CACHE_DIR"], "downloads"))
+        pathname = os.path.join(download_dir, filename)
+        # Save pathname to environment
+        self.env["pathname"] = pathname
+
+        # create download_dir if needed
+        if not os.path.exists(download_dir):
+            try:
+                os.makedirs(download_dir)
+            except OSError, err:
+                raise ProcessorError(
+                    "Can't create %s: %s" % (download_dir, err.strerror))
+
+        # Download URL.
+        url_handle = None
+        try:
+
+            
+
+            request = urllib2.Request(url=self.env["url"])
+
+            if "request_headers" in self.env:
+                headers = self.env["request_headers"]
+                for header, value in headers.items():
+                    request.add_header(header, value)
+
+            # if file already exists, add some headers to the request
+            # so we don't retrieve the content if it hasn't changed
+            if os.path.exists(pathname):
+                etag = getxattr(pathname, XATTR_ETAG)
+                last_modified = getxattr(pathname, XATTR_LAST_MODIFIED)
+                if etag:
+                    request.add_header("If-None-Match", etag)
+                if last_modified:
+                    request.add_header("If-Modified-Since", last_modified)
+                existing_file_length = os.path.getsize(pathname)
+
+            # Open URL.
+            try:
+                url_handle = urllib2.urlopen(request)
+            except urllib2.HTTPError, http_err:
+                if http_err.code == 304:
+                    # resource not modified
+                    self.env["download_changed"] = False
+                    self.output("Item at URL is unchanged.")
+                    self.output("Using existing %s" % pathname)
+                    return
+                else:
+                    raise
+
+            # If Content-Length header is present and we had a cached
+            # file, see if it matches the size of the cached file.
+            # Useful for webservers that don't provide Last-Modified
+            # and ETag headers.
+            size_header = url_handle.info().get("Content-Length")
+            if url_handle.info().get("Content-Length"):
+                if int(size_header) == existing_file_length:
+                    self.env["download_changed"] = False
+                    self.output("File size returned by webserver matches that "
+                                "of the cached file: %s bytes" % size_header)
+                    self.output("WARNING: Matching a download by filesize is a "
+                                "fallback mechanism that does not guarantee "
+                                "that a build is unchanged.")
+                    self.output("Using existing %s" % pathname)
+                    return
+
+            # Handle edge case where server responds with a
+            # 'Content-Encoding: gzip' header, even though we've requested the
+            # default 'Accept-Encoding: identity'
+            content_encoding = url_handle.info().get('Content-Encoding', '')\
+                                    .lower()
+            if content_encoding == 'gzip':
+                # notes on window bit size from http://www.zlib.net/manual.html
+                # "windowBits can also be greater than 15 for optional gzip
+                # decoding. Add 32 to windowBits to enable zlib and gzip
+                # decoding with automatic header detection, or add 16 to decode
+                # only the gzip format (the zlib format will return a
+                # Z_DATA_ERROR)."
+                #
+                # Therefore, we explicitly set the window buffer size to
+                # the width for decoding only gzip. zlib.MAX_WBITS is the 15
+                # mentioned above.
+                gzip_handle = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            elif content_encoding and content_encoding != 'identity':
+                self.output("WARNING: Content-Encoding of %s may not be "
+                            "supported" % content_encoding)
+
+            # Download file.
+            self.env["download_changed"] = True
+            with open(pathname, "wb") as file_handle:
+                while True:
+                    data = url_handle.read(CHUNK_SIZE)
+                    if len(data) == 0:
+                        break
+                    if content_encoding == 'gzip':
+                        data = gzip_handle.decompress(data)
+                    file_handle.write(data)
+
+            # save last-modified header if it exists
+            if url_handle.info().get("last-modified"):
+                self.env["last_modified"] = (
+                    url_handle.info().get("last-modified"))
+                xattr.setxattr(
+                    pathname, XATTR_LAST_MODIFIED,
+                    url_handle.info().get("last-modified"))
+                self.output(
+                    "Storing new Last-Modified header: %s"
+                    % url_handle.info().get("last-modified"))
+
+            # save etag if it exists
+            self.env["etag"] = ""
+            if url_handle.info().get("etag"):
+                self.env["etag"] = url_handle.info().get("etag")
+                xattr.setxattr(
+                    pathname, XATTR_ETAG, url_handle.info().get("etag"))
+                self.output("Storing new ETag header: %s"
+                            % url_handle.info().get("etag"))
+
+            self.output("Downloaded %s" % pathname)
+            self.env['url_downloader_summary_result'] = {
+                'summary_text': 'The following new items were downloaded:',
+                'data': {
+                    'download_path': pathname,
+                }
+            }
+
+        except BaseException as err:
+            raise ProcessorError(
+                "Couldn't download %s: %s" % (self.env["url"], err))
+        finally:
+            if url_handle is not None:
+                url_handle.close()
+
+
+if __name__ == "__main__":
+    PROCESSOR = URLDownloader()
+    PROCESSOR.execute_shell()

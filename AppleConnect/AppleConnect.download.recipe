@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Description</key>
+    <string>Downloads latest Apple Connect disk image.</string>
+    <key>Identifier</key>
+    <string>com.xbstech.grahamgilbert.AppleConnect.download</string>
+    <key>Input</key>
+    <dict>
+        <key>NAME</key>
+        <string>AppleConnect</string>
+        <key>DOWNLOAD_URL</key>
+        <string>https://wdg2.apple.com/download/files/AppleConnectInstaller.dmg</string>
+        <key>USER_AGENT</key>
+        <string>Mozilla/5.0</string>
+    </dict>
+    <key>MinimumVersion</key>
+    <string>0.2.0</string>
+    <key>Process</key>
+    <array>
+        <dict>
+            <key>Processor</key>
+            <string>URLDownloader</string>
+            <key>Arguments</key>
+            <dict>
+                <key>url</key>
+                <string>%DOWNLOAD_URL%</string>
+                <key>filename</key>
+                <string>%NAME%.dmg</string>
+                <key>request_headers</key>
+                <dict>
+                    <key>User-Agent</key>
+                    <string>Mozilla/5.0</string>
+                    <key>Referrer</key>
+                    <string>https://wdg2.apple.com/download/Login</string>
+                    <key>Cookie</key>
+                    <string>xp_ci=3z4FRp2Tz3Hyz4Txz93Kz1BmZfIrAP; myacinfo=DAWTKNV2bda6731c7698fd33400d159670055ab0eae97078584650baf6215fd57564b62b8770e8b0c147142481c077d44378cfcbff2e57372aeb9044129e25d3e84aeba08b2d0f8aae26f998caff065bb8451ba246e4d4511bcd8343ffafeec952e92aa19640b13277ceb254af90df3311aa0e8ed55e1cfa198d1aea97a75303f86f7a34bfbc1bbd32a0c4c5258969103fb513d3f7a7ad4f4b6abbd44dd7ac041556e94ce97acbc79d4f6c8bbd6de2c2d4f16a84aaa4fb5eacaca87b5cb62f87e764da93d2712e4d4a98aa113fc57d288b34d4e5cdd9804935525024aad6f776b43a7ca979fe43da9bdc75db15b15df78e6cf68eae84938cae08697bb60f58a1b59f1130575a8de4d1da529e1911e71cb6a3252bMVRYV2; site=USA; dslang=US-EN; ds01_a=2774bb2316da0b67990a4830e4dd93ce9ef75165c4e4a1828b0035bccb2d41f2a1257239713c9366f74e150e7c1398906da6eec80c59c7812ec29b88a663fadc439800b6cbdda55dd985cd24536de0b747f5d479235a4d3ac5d645364318632e5908b3249eb7f0419190e1d1520c9a58GZVX; s_ria=Flash%2018%7C; s_cc=true; s_orientation=%5B%5BB%5D%5D; s_vnum_n2_us=4%7C6%2C30%7C1%2C3%7C2%2C19%7C4%2C35%7C1; POD=us~en; s_orientationHeight=645; ac_history=%7B%22search%22%3A%5B%5D%2C%22kb%22%3A%5B%5B%22DL1572%22%2C%22Java%20for%20OS%20X%202014-001%22%2C%22en_US%22%2C1437407387000%2C%22unknown%22%5D%5D%2C%22help%22%3A%5B%5D%2C%22psp%22%3A%5B%5D%2C%22offer_reason%22%3A%7B%7D%2C%22total_count%22%3A%7B%22kbs%22%3A1%2C%22last_kb%22%3A1437407387000%7D%7D; s_sq=%5B%5BB%5D%5D; s_vi=[CS]v1|2AC9FDD105190A8B-40000611C00392AB[CE]; s_fid=4AB59D7D5729E51C-15B8EE74F42DE0BC; JSESSIONID=MXvkzrqSd998jOAQeFQFGr7t; NSC_MCWT_xeh2_443=5ccba3d816d56e5ecb97608a3b7eb0a7c7f046859ffae5cc736bcaa80d7645a17767df2f</string>
+                </dict>
+            </dict>
+        </dict>
+        <dict>
+            <key>Processor</key>
+            <string>EndOfCheckPhase</string>
+        </dict>
+    </array>
+</dict>
+</plist>
